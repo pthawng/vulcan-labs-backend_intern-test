@@ -8,8 +8,8 @@ Write-Host "Result: $result" -ForegroundColor Green
 Write-Host "Exit Code: $LASTEXITCODE" -ForegroundColor Gray
 Write-Host ""
 
-Write-Host "Test 2: Code 'xyz' (should return false)" -ForegroundColor Yellow  
-$result = & .\validator.exe xyz data\campaign_codes.txt data\membership_codes.txt
+Write-Host "Test 2: Code 'xyzki' (should return false)" -ForegroundColor Yellow  
+$result = & .\validator.exe xyzki data\campaign_codes.txt data\membership_codes.txt
 Write-Host "Result: $result" -ForegroundColor Green
 Write-Host "Exit Code: $LASTEXITCODE" -ForegroundColor Gray
 Write-Host ""
