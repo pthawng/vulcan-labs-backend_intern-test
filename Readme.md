@@ -1,124 +1,245 @@
 # Promotion Code Validator
 
-Validates whether a promotion code exists in both campaign and membership systems.
+Backend intern coding assignment for Vulcan Labs.
 
-## Solution Overview
+## Problem
 
-A code is **eligible** only if it exists in **both** data sources.
+Determine if a promotion code is eligible for use. A code is eligible if and only if it exists in **both** data sources:
+- `campaign_codes.txt`
+- `membership_codes.txt`
 
-### Key Features
-- ✅ **Memory Efficient**: O(1) space - streams files line-by-line
-- ✅ **Handles Large Files**: Processes millions of codes without loading into memory
-- ✅ **Clean Architecture**: Repository pattern with dependency injection
-- ✅ **Input Validation**: Defensive programming with custom error types
-- ✅ **Comprehensive Tests**: 20+ test cases with mocks and benchmarks
-
----
-
-## Architecture
-
-```
-cmd/app/main.go          (Entry point)
-    ↓
-internal/promotion/
-├── service.go           (Service struct)
-├── validator.go         (Eligibility logic)
-└── validation.go        (Input validation)
-    ↓
-internal/repository/
-├── repository.go        (Interface)
-├── file_repository.go   (Streaming implementation)
-└── mock_repository.go   (Testing)
-```
+**Constraints:**
+- Files may contain millions of codes
+- Files may not fit entirely in memory
+- Each file contains one code per line
+- Codes are 1-5 lowercase letters (a-z)
 
 ---
 
-## Design Decisions & Trade-offs
+## High-Level Design
 
-### Current: Streaming Approach
+The implementation separates concerns into three layers:
 
-**Why chosen**: Assignment says "files may not fit into memory"
+### 1. Application Entry Point
+`cmd/app/main.go` - Parses command-line arguments and coordinates the validation flow.
+
+### 2. Promotion Validation Logic
+`internal/promotion/` - Contains the core business logic:
+- `service.go` - Service struct that depends on repository interfaces
+- `validator.go` - Implements `IsEligible()` method with early exit optimization
+- `validation.go` - Input validation (length, character constraints)
+
+### 3. Repository Abstraction
+`internal/repository/` - Abstracts data access:
+- `repository.go` - `CodeRepository` interface with single `Exists(code)` method
+- `file_repository.go` - Streaming file implementation
+- `mock_repository.go` - In-memory implementation for testing
+
+**Why repository abstraction?**
+- Enables unit testing without file I/O
+- Separates business logic from data access
+- Makes it easier to swap implementations (e.g., database, cache)
+
+---
+
+## Validation Approach
+
+### Algorithm: Streaming File Scan
+
+The `FileCodeRepository` uses `bufio.Scanner` to read files line-by-line:
 
 ```go
-scanner := bufio.NewScanner(file)
-for scanner.Scan() {
-    if scanner.Text() == code {
-        return true, nil  // Early exit when found
+func (r *FileCodeRepository) Exists(code string) (bool, error) {
+    file, err := os.Open(r.filePath)
+    if err != nil {
+        return false, err
     }
+    defer file.Close()
+
+    scanner := bufio.NewScanner(file)
+    for scanner.Scan() {
+        if scanner.Text() == code {
+            return true, nil  // Early exit
+        }
+    }
+    return false, scanner.Err()
 }
 ```
 
-| Metric | Value |
-|--------|-------|
-| **Time Complexity** | O(n) per lookup |
-| **Space Complexity** | O(1) |
-| **Memory Usage** | ~4KB buffer |
+### Why This Approach?
 
-**Trade-offs**:
-- ✅ **Pros**: Minimal memory, handles any file size, simple
-- ⚠️ **Cons**: Slower for repeated lookups
+**Fits the constraints:**
+- Does not load entire file into memory
+- Handles arbitrarily large files
+- Simple and correct
 
-### Alternative Considered: Caching
-
-For high-frequency validation (1000+ req/sec), could add hash map caching:
-- **Time**: O(1) lookup after initial load
-- **Space**: O(n) - ~25MB for 500K codes
-- **When**: Production systems with frequent validations
-
-**Not implemented** to avoid over-engineering for this scope.
+**Early exit behavior:**
+The `IsEligible()` method checks the campaign file first. If the code is not found there, it returns `false` immediately without checking the membership file. This reduces unnecessary I/O for codes that don't exist in the campaign system.
 
 ---
 
-## Input Validation
+## Data Structures & Complexity
 
-```go
-ValidateCode("solar")   // ✅ Valid
-ValidateCode("")        // ❌ Error: code cannot be empty
-ValidateCode("PROMO")   // ❌ Error: must be lowercase
-ValidateCode("promo1")  // ❌ Error: must contain only a-z
-ValidateCode("abcdef")  // ❌ Error: must be at most 5 characters
+### Time Complexity
+- **Single validation**: O(n + m) worst case
+  - n = number of codes in campaign file
+  - m = number of codes in membership file
+- **Best case**: O(k) where k is the position of the code in the campaign file (early exit)
+
+### Space Complexity
+- **O(1)** - Uses a fixed-size buffer (~4KB) for scanning
+- Does not depend on file size
+
+### Realistic Performance
+For a file with 1 million codes:
+- Worst case: ~2 million line reads (code not in campaign file)
+- Average case: ~500K line reads (code found midway in campaign file)
+- This is acceptable for a command-line tool with infrequent usage
+
+---
+
+## Trade-offs & Alternatives
+
+### Alternative 1: Load into Hash Map
+**Approach:** Read both files into `map[string]bool` at startup.
+
+**Pros:**
+- O(1) lookup after initial load
+- Fast for repeated validations
+
+**Cons:**
+- O(n) memory usage (~25MB for 500K codes)
+- Violates "may not fit in memory" constraint
+- Overkill for single-use CLI tool
+
+**Why not chosen:** Assignment explicitly states files may not fit in memory.
+
+### Alternative 2: Bloom Filter
+**Approach:** Use probabilistic data structure for membership testing.
+
+**Pros:**
+- Space-efficient (1-2 bytes per element)
+- Fast lookups
+
+**Cons:**
+- False positives possible
+- Requires external library
+- Over-engineering for this scope
+
+**Why not chosen:** Adds complexity without clear benefit for the assignment's requirements.
+
+### Alternative 3: External Sort + Merge
+**Approach:** Sort both files, then merge to find intersection.
+
+**Pros:**
+- O(n log n) time
+- O(1) space if using external sort
+
+**Cons:**
+- Requires writing temporary files
+- More complex implementation
+- Slower for single lookups
+
+**Why not chosen:** Optimizes for batch processing, not single code validation.
+
+---
+
+## Testing & Benchmarking
+
+### Unit Tests
+Located in `*_test.go` files:
+
+**Validation tests** (`validation_test.go`):
+- Valid codes
+- Empty code
+- Code too long (>5 chars)
+- Invalid characters (uppercase, numbers, special chars)
+
+**Integration tests** (`validator_test.go`):
+- Code exists in both systems → `true`
+- Code exists in only one system → `false`
+- Code exists in neither system → `false`
+
+**Repository tests** (`file_repository_test.go`):
+- Code found in file (first line, middle, last line)
+- Code not found
+- File not found error handling
+
+### Mock Repository
+`mock_repository.go` provides an in-memory implementation using a hash map. This allows testing the service layer without file I/O.
+
+### Benchmarks
+`validator_bench_test.go` contains a single benchmark:
+- `BenchmarkIsEligible_HappyPath` - Measures performance when code exists in both systems
+
+**Note:** Benchmarks use mock repositories with 1000 codes, not real file I/O. They establish a baseline for the service logic, not end-to-end file scanning performance.
+
+---
+
+## Assumptions & Limitations
+
+### File Format Assumptions
+- One code per line
+- No leading/trailing whitespace
+- UTF-8 encoding
+- Newline-delimited (LF or CRLF)
+
+### Code Constraints
+- Length: 1-5 characters
+- Characters: lowercase a-z only
+- These constraints are validated before file lookup
+
+### Scope Limitations
+- **Single-threaded:** No concurrent validation support
+- **No caching:** Each validation scans files from scratch
+- **No file watching:** Does not detect file changes
+- **No transaction support:** Assumes files are read-only
+- **Error handling:** Basic error propagation, no retry logic
+
+### What This Implementation Does NOT Do
+- Does not handle concurrent writes to data files
+- Does not cache file contents
+- Does not provide an HTTP/gRPC API
+- Does not include logging or metrics
+- Does not handle file rotation or updates
+
+---
+
+## How to Run
+
+### Build
+```bash
+go build -o validator ./cmd/app
 ```
 
----
-
-## Usage
-
+### Run
 ```bash
-# Build
-go build -o validator cmd/app/main.go
-
-# Run
 ./validator <code> <campaign_file> <membership_file>
+```
 
-# Example
+**Example:**
+```bash
 ./validator promo data/campaign_codes.txt data/membership_codes.txt
 ```
 
-**Output**: `true` or `false`
+**Output:** `true` or `false`
 
----
-
-## Testing
-
+### Run Tests
 ```bash
-# Run all tests
+# All tests
 go test ./...
 
-# Run with verbose
+# With verbose output
 go test ./... -v
 
-# Run benchmarks
-go test -bench=. ./...
-
-# Test coverage
+# With coverage
 go test ./... -cover
 ```
 
-### Test Coverage
-- ✅ Service tests (9 cases): both systems, single system, errors
-- ✅ Validation tests (10 cases): empty, invalid chars, length
-- ✅ Repository tests (4 cases): exists, not found, empty file
-- ✅ Benchmark tests (3 scenarios)
+### Run Benchmarks
+```bash
+go test -bench=. ./internal/promotion/
+```
 
 ---
 
@@ -126,56 +247,43 @@ go test ./... -cover
 
 ```
 .
-├── cmd/app/main.go                    # Entry point
+├── cmd/app/
+│   └── main.go                    # Entry point
 ├── internal/
 │   ├── promotion/
-│   │   ├── service.go                 # Service struct
-│   │   ├── validator.go               # IsEligible logic
-│   │   ├── validation.go              # Input validation
-│   │   ├── validator_test.go          # Service tests
-│   │   ├── validation_test.go         # Validation tests
-│   │   └── validator_bench_test.go    # Benchmarks
+│   │   ├── service.go             # Service struct
+│   │   ├── validator.go           # IsEligible logic
+│   │   ├── validation.go          # Input validation
+│   │   ├── validator_test.go      # Integration tests (3 cases)
+│   │   ├── validation_test.go     # Validation tests (4 cases)
+│   │   └── validator_bench_test.go # Benchmarks (1 case)
 │   └── repository/
-│       ├── repository.go              # Interface
-│       ├── file_repository.go         # Streaming impl
-│       ├── file_repository_test.go    # Repository tests
-│       └── mock_repository.go         # Mock for testing
-├── data/                              # Test data files
-└── scripts/generate_data.go           # Data generator
+│       ├── repository.go          # Interface definition
+│       ├── file_repository.go     # Streaming implementation
+│       ├── file_repository_test.go # Repository tests (3 cases)
+│       └── mock_repository.go     # Mock for testing
+├── data/
+│   ├── campaign_codes.txt         # Campaign data
+│   └── membership_codes.txt       # Membership data
+└── scripts/
+    └── generate_data.go           # Test data generator
 ```
 
 ---
 
-## Complexity Analysis
+## Implementation Notes
 
-|     Operation     | Time | Space |
-|-------------------|------|-------|
-| Single validation | O(n) |  O(1) |
-| Input validation  | O(m) |  O(1) |
+### Why Streaming?
+The assignment states "files may not fit entirely into memory." The streaming approach ensures the solution works regardless of file size, even if it means slower lookups.
 
-*n = codes in file, m = code length (max 5)*
+### Why Early Exit?
+Checking the campaign file first and returning early if the code is not found reduces unnecessary I/O. This is a simple optimization that doesn't add complexity.
 
----
-
-## Assumptions
-
-1. **File format**: One code per line, UTF-8, no trailing whitespace
-2. **Code constraints**: 1-5 lowercase letters (a-z)
-3. **Files**: Readable, exist at specified path
-4. **Codes**: Unique within each file
+### Why Repository Pattern?
+The repository abstraction allows testing the business logic (`IsEligible`) without file I/O. This makes tests faster and more reliable.
 
 ---
 
-## Future Enhancements
-
-For production with high-frequency validations:
-- [ ] Add caching layer (hash map or Redis)
-- [ ] Add context.Context for cancellation
-- [ ] Add structured logging
-- [ ] Add metrics collection
-- [ ] Add HTTP/gRPC API
-
----
-
-**Author**: Le Phuoc Thang
-**Last Updated**: 2026-02-05
+**Author:** Le Phuoc Thang  
+**Assignment:** Backend Intern Coding Test - Vulcan Labs  
+**Date:** February 2026
