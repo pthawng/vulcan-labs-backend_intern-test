@@ -29,8 +29,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Use fmt.Fprintf to explicitly write to stdout
-	// This ensures output is visible in PowerShell
 	fmt.Fprintf(os.Stdout, "%v\n", ok)
-	os.Stdout.Sync() // Flush stdout buffer
+	os.Stdout.Sync()
 }

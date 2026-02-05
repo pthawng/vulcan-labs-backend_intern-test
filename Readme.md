@@ -334,18 +334,18 @@ Located in `*_test.go` files:
 ### Build
 
 ```bash
-go build -o validator ./cmd/app
+go build -o validator.exe ./cmd/app
 ```
 
 ### Run
 
 ```bash
-./validator CODE CAMPAIGN_FILE MEMBERSHIP_FILE
+./validator.exe CODE CAMPAIGN_FILE MEMBERSHIP_FILE
 ```
 
 **Example:**
 ```bash
-./validator promo data/campaign_codes.txt data/membership_codes.txt
+./validator.exe promo data/campaign_codes.txt data/membership_codes.txt
 ```
 
 **Output:** `true` or `false`
