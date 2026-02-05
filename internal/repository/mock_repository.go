@@ -25,3 +25,19 @@ func (m *MockCodeRepository) Exists(code string) (bool, error) {
 	}
 	return m.codes[code], nil
 }
+
+// LoadAll returns all codes as a set.
+// Returns a copy to prevent external modification.
+func (m *MockCodeRepository) LoadAll() (map[string]struct{}, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+
+	// Convert internal map[string]bool to map[string]struct{}
+	result := make(map[string]struct{}, len(m.codes))
+	for code := range m.codes {
+		result[code] = struct{}{}
+	}
+
+	return result, nil
+}

@@ -93,3 +93,33 @@ func TestFileRepository_FileError(t *testing.T) {
 		t.Errorf("expected false for nonexistent file, got %v", result)
 	}
 }
+
+func TestFileRepository_LoadAll(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "test_codes.txt")
+
+	content := "abc\nxyz\npromo\nsale\n"
+	err := os.WriteFile(testFile, []byte(content), 0644)
+	if err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+
+	repo := NewFileCodeRepository(testFile)
+	codeSet, err := repo.LoadAll()
+
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+
+	expected := []string{"abc", "xyz", "promo", "sale"}
+
+	if len(codeSet) != len(expected) {
+		t.Errorf("expected %d codes, got %d", len(expected), len(codeSet))
+	}
+
+	for _, code := range expected {
+		if _, exists := codeSet[code]; !exists {
+			t.Errorf("expected code %q to be in set", code)
+		}
+	}
+}
