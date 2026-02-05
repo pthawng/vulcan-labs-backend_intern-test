@@ -25,9 +25,12 @@ func main() {
 
 	ok, err := service.IsEligible(code)
 	if err != nil {
-		fmt.Println("error:", err)
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
 
-	fmt.Println(ok)
+	// Use fmt.Fprintf to explicitly write to stdout
+	// This ensures output is visible in PowerShell
+	fmt.Fprintf(os.Stdout, "%v\n", ok)
+	os.Stdout.Sync() // Flush stdout buffer
 }
